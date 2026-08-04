@@ -1,0 +1,4 @@
+interface:
+  display_name: "Squeeze"
+  short_description: "Coordinate GitHub issues through Herdr teams"
+  default_prompt: "Use $squeeze to start or manage a GitHub issue workspace."
