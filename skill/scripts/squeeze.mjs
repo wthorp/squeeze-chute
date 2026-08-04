@@ -370,6 +370,6 @@ export function main(argv = process.argv.slice(2), runner = new Runner()) {
   return status(runner, dryRun);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

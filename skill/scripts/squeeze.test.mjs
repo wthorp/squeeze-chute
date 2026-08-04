@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_CONFIG,
   activeIssueWorktrees,
@@ -15,6 +16,15 @@ import {
   slugify,
   worktreeCommand,
 } from './squeeze.mjs';
+
+test('can be imported without a CLI argv path', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', `import(${JSON.stringify(new URL('./squeeze.mjs', import.meta.url).href)})`],
+    { encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test('ships the requested role and concurrency defaults', () => {
   assert.equal(DEFAULT_CONFIG.maxActiveIssues, 8);
