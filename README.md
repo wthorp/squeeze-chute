@@ -3,6 +3,10 @@
 Squeeze turns GitHub issues into isolated Herdr worktree teams with owner, planner, implementer,
 and validator roles.
 
+Each team carries a numbered acceptance/evidence matrix from planning through a draft PR. Tests
+count only when their assertions establish the corresponding criterion, and validation or human
+acceptance becomes stale whenever the PR head changes.
+
 ## Requirements
 
 - Git, GitHub CLI, Node.js, and Herdr
@@ -48,4 +52,3 @@ for your environment.
 ```sh
 node --test skill/scripts/squeeze.test.mjs
 ```
-

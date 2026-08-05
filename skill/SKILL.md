@@ -44,16 +44,25 @@ open-issue/unmerged-PR work. It removes the Herdr worktree workspace but preserv
 
 ## Role workflow
 
-- `owner` coordinates only. It hands the approved plan to the implementer, cycles validator
-  failures back, and pushes/opens a PR only after every required suite passes and validation leaves
-  tracked files unchanged.
-- `planner` is read-only. It returns a decision-complete plan and all architecture-review gates.
+- `owner` coordinates only. It opens a draft PR after the first committed slice and keeps a
+  numbered acceptance/evidence matrix in its body. It cycles validator failures back and marks the
+  PR ready only after every matrix row, required suite, architecture gate, and required human
+  acceptance is proven for the current commit SHA.
+- `planner` is read-only. It returns a decision-complete plan, all architecture-review gates, and
+  an acceptance/evidence matrix connecting each criterion to observable assertions and an exact
+  test layer, transport, and command.
 - `implementer` is the sole tracked-file writer. It implements the approved plan, checks, and
-  commits without pushing.
+  commits without pushing. New or repaired behavior includes red-on-base and green-on-branch
+  evidence without weakening assertions.
 - `validator` is read-only. It may not edit tracked files or weaken tests. It runs every suite
-  required by repository instructions, CI, and the issue; reports exact commands and failures; and
-  verifies the worktree remains unchanged. Failed, skipped, blocked, or unrun required suites fail
+  required by repository instructions, CI, the issue, and the matrix; inspects what tests actually
+  exercise; reports exact commands and failures; and verifies the SHA and worktree remain
+  unchanged. Failed, skipped, blocked, semantically insufficient, or unrun required suites fail
   validation.
+
+Validation and human acceptance are immutable-SHA evidence. Any new commit or discovered failure
+invalidates them and returns the PR to draft. A harness that bypasses an acceptance criterion's
+application entry point, UI, or transport cannot count as product end-to-end evidence.
 
 Require human review whenever repository instructions demand it. Never merge or clean up
 automatically. PRs must include `Closes #<number>`, a summary, and test evidence.
@@ -64,4 +73,3 @@ Global defaults live at `~/.config/squeeze/config.json`. A tracked `.squeeze.jso
 override top-level values and individual role definitions. `init` is an argument array run in a
 role-free worktree before agents start; `[]` disables it. Keep context paths repository-relative.
 Agent and init arguments are always literal arrays; never use shell interpolation.
-
