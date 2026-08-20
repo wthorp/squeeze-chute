@@ -111,24 +111,16 @@ test('existing paths and branches select reopen commands', () => {
   assert.deepEqual(worktreeCommand({ repoRoot: '/r', branch: 'b', base: 'origin/main', title: 'x', branchExists: true })[1].slice(0, 2), ['worktree', 'open']);
 });
 
-test('validator cannot pass without all required tests and an unchanged worktree', () => {
+test('requires validation followed by manual human approval on GitHub', () => {
   const issue = { url: 'https://example/30' };
   const validator = rolePrompt('validator', 30, issue, 'origin/main', ['AGENTS.md']);
   const owner = rolePrompt('owner', 30, issue, 'origin/main', ['AGENTS.md']);
   const planner = rolePrompt('planner', 30, issue, 'origin/main', ['AGENTS.md']);
   const implementer = rolePrompt('implementer', 30, issue, 'origin/main', ['AGENTS.md']);
-  assert.match(planner, /numbered acceptance\/evidence matrix/);
-  assert.match(planner, /assertions establish the criterion/);
-  assert.match(implementer, /red-on-base/);
-  assert.match(validator, /canonical required verification command/);
-  assert.match(validator, /inspect test setup and assertions/);
-  assert.match(validator, /component or harness test cannot satisfy a product end-to-end criterion/);
-  assert.match(validator, /Never make a failure pass by changing or weakening a test/);
-  assert.match(validator, /failed, skipped, blocked, semantically insufficient, or unrun required suite means validation failed/);
+  assert.doesNotMatch([owner, planner, implementer, validator].join('\n'), /acceptance\/evidence|immutable-SHA|red-on-base|semantically insufficient/);
   assert.match(validator, /git diff --exit-code/);
-  assert.match(owner, /Open a draft PR after the first committed slice/);
-  assert.match(owner, /any new commit or discovered failure makes prior evidence stale/);
-  assert.match(owner, /Mark it ready only after the validator reports/);
+  assert.match(owner, /reviewed and approved by a human manually through the GitHub website/);
+  assert.match(owner, /agent or chat approval does not count/);
   assert.match(owner, /validation left tracked files unchanged/);
 });
 

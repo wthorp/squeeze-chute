@@ -3,9 +3,7 @@
 Squeeze turns GitHub issues into isolated Herdr worktree teams with owner, planner, implementer,
 and validator roles.
 
-Each team carries a numbered acceptance/evidence matrix from planning through a draft PR. Tests
-count only when their assertions establish the corresponding criterion, and validation or human
-acceptance becomes stale whenever the PR head changes.
+Every pull request must be reviewed and approved by a human through GitHub before it is merged.
 
 ## Requirements
 
