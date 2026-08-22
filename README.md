@@ -1,17 +1,15 @@
 # Squeeze Chute
 
-Squeeze turns GitHub issues into isolated Herdr worktree teams with owner, planner, implementer,
-and validator roles.
+Squeeze turns GitHub issues into isolated Herdr worktree teams with an owner, one implementer, a
+read-only validator, and a live Git/filesystem diff pane.
 
-Each team carries a numbered acceptance/evidence matrix from planning through a draft PR. Tests
-count only when their assertions establish the corresponding criterion, and validation or human
-acceptance becomes stale whenever the PR head changes.
+Every pull request must be reviewed and approved by a human through GitHub before it is merged.
 
 ## Requirements
 
 - Git, GitHub CLI, Node.js, and Herdr
 - A Herdr-managed terminal (`HERDR_ENV=1`)
-- Configured Herdr integrations for every selected agent kind
+- Configured Herdr integrations for every selected Herdr-managed agent kind
 
 ## Install
 
@@ -46,6 +44,22 @@ runs through a shell:
 An empty `init` array disables initialization. The built-in agent defaults deliberately bypass
 Codex approvals/sandboxing and Claude permissions; override role `args` if that is not appropriate
 for your environment.
+
+A role may instead provide a complete command array. This is useful for optional wrappers such as
+[OneCLI](https://onecli.sh/docs/guides/coding-agents) and is never run through shell interpolation:
+
+```json
+{
+  "roles": {
+    "owner": {
+      "command": ["onecli", "run", "--agent", "squeeze-owner", "--", "codex", "--yolo"]
+    }
+  }
+}
+```
+
+Set `kind` to switch that role back to Herdr-managed launching. Existing `roles.planner`
+configuration is ignored for compatibility.
 
 ## Test
 
