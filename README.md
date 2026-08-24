@@ -1,7 +1,7 @@
 # Squeeze Chute
 
 Squeeze turns GitHub issues into isolated Herdr worktree teams with an owner, one implementer, a
-read-only validator, and a live Git/filesystem diff pane.
+read-only validator, and a live [Lumen](https://github.com/jnsahaj/lumen) diff pane.
 
 Owner, diff, implementer, and validator each use a full tab; none share a split pane.
 
@@ -9,7 +9,7 @@ Every pull request must be reviewed and approved by a human through GitHub befor
 
 ## Requirements
 
-- Git, GitHub CLI, Node.js, and Herdr
+- Git, GitHub CLI, Node.js, Herdr, and Lumen
 - A Herdr-managed terminal (`HERDR_ENV=1`)
 - Configured Herdr integrations for every selected Herdr-managed agent kind
 

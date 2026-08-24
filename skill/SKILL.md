@@ -49,8 +49,8 @@ open-issue/unmerged-PR work. It removes the Herdr worktree workspace but preserv
   and commits without pushing.
 - `validator` is a strictly read-only adversarial challenger. It inspects assertions, chooses
   targeted risk probes, runs every required suite, and verifies the worktree remains unchanged.
-- `diff` is an observational Node process. It watches Git and filesystem state but never prompts
-  agents or advances workflow.
+- `diff` runs `lumen diff <base> --watch`. It is observational and never prompts agents or advances
+  workflow. Require Lumen to be installed; Squeeze does not install it.
 
 Every PR must be reviewed and approved by a human manually through the GitHub website before
 merge; agent or chat approval does not count. Never merge or clean up automatically. PRs must

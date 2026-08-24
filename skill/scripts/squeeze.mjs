@@ -8,7 +8,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const ROLES = ['owner', 'implementer', 'validator'];
 const LEGACY_ROLES = ['owner', 'planner', 'implementer', 'validator'];
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const OBSERVER_PATH = resolve(SCRIPT_DIR, 'observe.mjs');
 const LAUNCHER_PATH = resolve(SCRIPT_DIR, 'launch.mjs');
 export const DEFAULT_CONFIG = {
   version: 1,
@@ -148,8 +147,8 @@ export function launcherCommand(command) {
   return [process.execPath, LAUNCHER_PATH, encodedCommand(command)];
 }
 
-export function observerCommand(worktreePath, number, branch, base) {
-  return launcherCommand([process.execPath, OBSERVER_PATH, '--worktree', worktreePath, '--issue', String(number), '--branch', branch, '--base', base]);
+export function diffCommand(base) {
+  return launcherCommand(['lumen', 'diff', base, '--watch']);
 }
 
 export function initializeWorktree(runner, worktreePath, init, enabled = true) {
@@ -220,6 +219,7 @@ function ensurePrerequisites(runner, config) {
   runner.run('git', ['status', '--porcelain']);
   runner.run('gh', ['auth', 'status']);
   runner.run('gh', ['repo', 'view', '--json', 'nameWithOwner']);
+  runner.run('lumen', ['--version']);
   const integrations = runner.run('herdr', ['integration', 'status']).stdout;
   for (const { kind } of Object.values(config.roles).filter((role) => role.kind)) {
     if (!new RegExp(`^${kind}: current(?: |$)`, 'm').test(integrations)) throw new Error(`Herdr integration is not current: ${kind}`);
@@ -262,7 +262,7 @@ function resolvedStartPlan(number, issue, config, worktrees, branchExistsLocally
       launch: config.roles[role].command ? 'command' : 'herdr',
       ...config.roles[role],
     }])),
-    observer: observerCommand(existing?.path ?? '<worktree>', number, existing?.branch ?? branch, config.base),
+    diff: diffCommand(config.base),
     contextFiles: config.contextFiles,
   };
 }
@@ -346,14 +346,14 @@ function ensureCompactPanes(runner, workspaceId, worktreePath) {
   return { owner, observer, implementer, validator };
 }
 
-function paneRunsObserver(runner, paneId) {
+function paneRunsDiff(runner, paneId) {
   const result = runner.run('herdr', ['pane', 'process-info', '--pane', paneId], { allowFailure: true });
-  return result.status === 0 && result.stdout.includes('observe.mjs');
+  return result.status === 0 && result.stdout.includes('lumen');
 }
 
-function startObserver(runner, pane, worktreePath, number, branch, base) {
-  if (!paneRunsObserver(runner, pane.pane_id)) {
-    runner.run('herdr', ['pane', 'run', pane.pane_id, ...observerCommand(worktreePath, number, branch, base)]);
+function startDiff(runner, pane, base) {
+  if (!paneRunsDiff(runner, pane.pane_id)) {
+    runner.run('herdr', ['pane', 'run', pane.pane_id, ...diffCommand(base)]);
   }
 }
 
@@ -390,7 +390,7 @@ export function ensureRoles(runner, workspaceId, worktreePath, number, issue, co
   let { tabs, agents } = workspaceState(runner, workspaceId);
   if (topology(tabs) === 'legacy') return 'legacy';
   const rolePanes = ensureCompactPanes(runner, workspaceId, worktreePath);
-  startObserver(runner, rolePanes.observer, worktreePath, number, issue.branch, config.base);
+  startDiff(runner, rolePanes.observer, config.base);
   for (const role of ROLES) {
     const pane = rolePanes[role];
     const name = agentName(number, role);
@@ -442,7 +442,7 @@ function start(runner, number, dryRun) {
   const state = workspaceState(runner, workspaceId);
   initializeWorktree(runner, worktree.path, config.init, shouldInitialize(number, state.agents, topology(state.tabs)));
   const actualTopology = ensureRoles(runner, workspaceId, worktree.path, number, { ...issue, branch: plan.branch }, config, contextFiles);
-  console.log(JSON.stringify({ ...plan, topology: actualTopology, observer: observerCommand(worktree.path, number, plan.branch, config.base), workspace: workspaceId, path: worktree.path }, null, 2));
+  console.log(JSON.stringify({ ...plan, topology: actualTopology, diff: diffCommand(config.base), workspace: workspaceId, path: worktree.path }, null, 2));
 }
 
 function status(runner, dryRun) {
@@ -456,13 +456,13 @@ function status(runner, dryRun) {
     const number = match ? Number(match[1]) : null;
     const state = workspaceState(runner, worktree.open_workspace_id);
     const currentTopology = topology(state.tabs);
-    const observerPane = currentTopology === 'compact' && state.panes.find((pane) => paneLabel(pane) === 'diff');
+    const diffPane = currentTopology === 'compact' && state.panes.find((pane) => paneLabel(pane) === 'diff');
     return {
       issue: number,
       branch: worktree.branch,
       workspace: worktree.open_workspace_id,
       topology: currentTopology,
-      observer: currentTopology === 'legacy' ? null : observerPane && paneRunsObserver(runner, observerPane.pane_id) ? 'running' : 'stopped',
+      diff: currentTopology === 'legacy' ? null : diffPane && paneRunsDiff(runner, diffPane.pane_id) ? 'running' : 'stopped',
       pr: prs.find((pr) => pr.headRefName === worktree.branch) ?? null,
       roles: number ? Object.fromEntries(ROLES.map((role) => {
         const agent = agents.find((item) => agentRecordedName(item) === agentName(number, role));

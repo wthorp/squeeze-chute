@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_CONFIG,
   activeIssueWorktrees,
   agentName,
   branchName,
+  diffCommand,
   encodedCommand,
   ensureRoles,
   initializeWorktree,
@@ -16,7 +14,6 @@ import {
   main,
   mergeConfig,
   missingRoles,
-  observerCommand,
   rolePrompt,
   safeContextFiles,
   shouldInitialize,
@@ -24,13 +21,6 @@ import {
   topology,
   worktreeCommand,
 } from './squeeze.mjs';
-import { createRedrawer, observe, renderSnapshot } from './observe.mjs';
-
-function command(cwd, args) {
-  const result = spawnSync(args[0], args.slice(1), { cwd, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout;
-}
 
 test('can be imported without a CLI argv path', () => {
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval', `import(${JSON.stringify(new URL('./squeeze.mjs', import.meta.url).href)})`], { encoding: 'utf8' });
@@ -74,7 +64,7 @@ test('encodes custom command boundaries without shell execution', () => {
   const result = spawnSync(...[launcherCommand(wrapped)[0], launcherCommand(wrapped).slice(1)], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), args);
-  assert.deepEqual(observerCommand('/repo with spaces', 30, 'issue/30-safe', 'origin/main').slice(0, 2), launcherCommand([]).slice(0, 2));
+  assert.deepEqual(JSON.parse(Buffer.from(diffCommand('origin/main')[2], 'base64url').toString()), ['lumen', 'diff', 'origin/main', '--watch']);
 });
 
 test('creates safe bounded slugs and globally unique names', () => {
@@ -117,7 +107,7 @@ function topologyRunner(legacy = false) {
   const state = {
     tabs: legacy ? ['owner', 'planner', 'implementer', 'validator'].map((label, index) => ({ label, tab_id: `t${index}` })) : [{ label: '#30 issue', tab_id: 't0' }],
     panes: legacy ? [0, 1, 2, 3].map((index) => ({ tab_id: `t${index}`, pane_id: `p${index}` })) : [{ tab_id: 't0', pane_id: 'p0' }],
-    agents: [], calls: [], observerRunning: false,
+    agents: [], calls: [], diffRunning: false,
   };
   return {
     state,
@@ -130,8 +120,8 @@ function topologyRunner(legacy = false) {
         state.tabs.push(tab);
         state.panes.find((pane) => pane.pane_id === args[2]).tab_id = tab.tab_id;
       }
-      if (args[0] === 'pane' && args[1] === 'process-info') return { status: state.observerRunning ? 0 : 1, stdout: state.observerRunning ? 'node observe.mjs' : '', stderr: '' };
-      if (args[0] === 'pane' && args[1] === 'run') state.observerRunning = true;
+      if (args[0] === 'pane' && args[1] === 'process-info') return { status: state.diffRunning ? 0 : 1, stdout: state.diffRunning ? 'lumen diff origin/main --watch' : '', stderr: '' };
+      if (args[0] === 'pane' && args[1] === 'run') state.diffRunning = true;
       if (args[0] === 'agent' && args[1] === 'start') state.agents.push({ name: args[2], pane_id: args[args.indexOf('--pane') + 1], workspace_id: 'w30' });
       return { status: 0, stdout: '', stderr: '' };
     },
@@ -157,7 +147,7 @@ function topologyRunner(legacy = false) {
   };
 }
 
-test('creates four full tabs, starts observer, and omits planner', () => {
+test('creates four full tabs, starts Lumen, and omits planner', () => {
   const runner = topologyRunner();
   const result = ensureRoles(runner, 'w30', '/worktree', 30, { url: 'https://example/30', branch: 'issue/30-safe' }, DEFAULT_CONFIG, ['AGENTS.md']);
   assert.equal(result, 'compact');
@@ -165,12 +155,12 @@ test('creates four full tabs, starts observer, and omits planner', () => {
   assert.deepEqual(runner.state.panes.map((pane) => pane.label), ['owner', 'diff', 'implementer', 'validator']);
   assert.deepEqual(new Set(runner.state.panes.map((pane) => pane.tab_id)).size, 4);
   assert.deepEqual(runner.state.agents.map((agent) => agent.name), ['i30-owner', 'i30-impl', 'i30-valid']);
-  assert.equal(runner.state.observerRunning, true);
+  assert.equal(runner.state.diffRunning, true);
   assert.equal(runner.state.calls.some(([, args]) => args.includes('planner')), false);
   assert.equal(runner.state.calls.some(([, args]) => args[0] === 'pane' && args[1] === 'split'), false);
-  const observerStarts = runner.state.calls.filter(([, args]) => args[0] === 'pane' && args[1] === 'run').length;
+  const diffStarts = runner.state.calls.filter(([, args]) => args[0] === 'pane' && args[1] === 'run').length;
   ensureRoles(runner, 'w30', '/worktree', 30, { url: 'https://example/30', branch: 'issue/30-safe' }, DEFAULT_CONFIG, ['AGENTS.md']);
-  assert.equal(runner.state.calls.filter(([, args]) => args[0] === 'pane' && args[1] === 'run').length, observerStarts);
+  assert.equal(runner.state.calls.filter(([, args]) => args[0] === 'pane' && args[1] === 'run').length, diffStarts);
 });
 
 test('moves existing compact split panes into full tabs', () => {
@@ -202,7 +192,7 @@ test('role contracts contain checkpoints, adversarial validation, and GitHub rev
   assert.doesNotMatch(Object.values(prompts).join('\n'), /planner|acceptance\/evidence|immutable-SHA|red-on-base/);
 });
 
-test('--dry-run reports compact topology, panes, launch modes, and observer without mutations', () => {
+test('--dry-run reports compact topology, panes, launch modes, and Lumen without mutations', () => {
   const calls = [];
   const runner = {
     env: { HERDR_ENV: '1' },
@@ -227,11 +217,12 @@ test('--dry-run reports compact topology, panes, launch modes, and observer with
   assert.equal(output.topology, 'compact');
   assert.deepEqual(output.panes, { overview: ['owner'], diff: ['diff'], workers: ['implementer'], validation: ['validator'] });
   assert.equal(output.roles.owner.launch, 'herdr');
-  assert.ok(Array.isArray(output.observer));
+  assert.ok(Array.isArray(output.diff));
+  assert.ok(calls.some(([commandName, args]) => commandName === 'lumen' && args[0] === '--version'));
   assert.equal(calls.some(([commandName, args]) => commandName === 'git' && args[0] === 'fetch'), false);
 });
 
-test('status reports compact or legacy topology and observer health', () => {
+test('status reports compact or legacy topology and Lumen health', () => {
   const worktrees = [
     { branch: 'issue/30-new', path: '/new', open_workspace_id: 'w30' },
     { branch: 'issue/31-old', path: '/old', open_workspace_id: 'w31' },
@@ -240,7 +231,7 @@ test('status reports compact or legacy topology and observer health', () => {
     env: { HERDR_ENV: '1' },
     run(commandName, args) {
       if (commandName === 'git') return { status: 0, stdout: '/repo', stderr: '' };
-      if (args[0] === 'pane' && args[1] === 'process-info') return { status: 0, stdout: 'node observe.mjs', stderr: '' };
+      if (args[0] === 'pane' && args[1] === 'process-info') return { status: 0, stdout: 'lumen diff origin/main --watch', stderr: '' };
       return { status: 0, stdout: '', stderr: '' };
     },
     json(commandName, args) {
@@ -257,59 +248,8 @@ test('status reports compact or legacy topology and observer health', () => {
   let output;
   console.log = (value) => { output = JSON.parse(value); };
   try { main(['status'], runner); } finally { console.log = original; }
-  assert.deepEqual(output.active.map(({ topology: value, observer }) => [value, observer]), [['compact', 'running'], ['legacy', null]]);
+  assert.deepEqual(output.active.map(({ topology: value, diff }) => [value, diff]), [['compact', 'running'], ['legacy', null]]);
   assert.deepEqual(Object.keys(output.active[0].roles), ['owner', 'implementer', 'validator']);
-});
-
-function gitFixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'squeeze-observer-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  command(root, ['git', 'init', '-q']);
-  command(root, ['git', 'config', 'user.email', 'test@example.com']);
-  command(root, ['git', 'config', 'user.name', 'Test']);
-  writeFileSync(join(root, 'base.txt'), 'base\n');
-  command(root, ['git', 'add', '.']); command(root, ['git', 'commit', '-qm', 'base']);
-  command(root, ['git', 'branch', '-M', 'main']);
-  command(root, ['git', 'checkout', '-qb', 'issue']);
-  return root;
-}
-
-test('observer renders committed, staged, unstaged, and eligible untracked changes', (t) => {
-  const root = gitFixture(t);
-  writeFileSync(join(root, 'committed.txt'), 'committed\n'); command(root, ['git', 'add', '.']); command(root, ['git', 'commit', '-qm', 'feature']);
-  writeFileSync(join(root, 'staged.txt'), 'staged\n'); command(root, ['git', 'add', 'staged.txt']);
-  writeFileSync(join(root, 'base.txt'), 'unstaged\n');
-  writeFileSync(join(root, '.gitignore'), 'ignored.txt\n'); writeFileSync(join(root, 'ignored.txt'), 'ignored\n');
-  writeFileSync(join(root, 'untracked.txt'), 'untracked\n'); writeFileSync(join(root, 'binary.bin'), Buffer.from([0, 1, 2]));
-  writeFileSync(join(root, 'large.txt'), Buffer.alloc(1024 * 1024 + 1, 65));
-  const output = renderSnapshot({ worktree: root, issue: '30', branch: 'issue/30-safe', base: 'main' });
-  for (const value of ['feature', 'committed.txt', 'staged.txt', 'unstaged', 'untracked.txt', 'binary.bin (binary)', 'large.txt (1048577 bytes, too large to render)']) assert.ok(output.includes(value), value);
-  assert.doesNotMatch(output, /\?\? ignored.txt/);
-});
-
-test('observer redraws on filesystem and Git changes but skips identical output', async (t) => {
-  const root = gitFixture(t);
-  const writes = [];
-  const close = observe({ worktree: root, issue: '30', branch: 'issue/30-safe', base: 'main' }, { interval: 40, debounce: 10, stream: { write: (value) => writes.push(value) } });
-  t.after(close);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(writes.length, 1);
-  writeFileSync(join(root, 'base.txt'), 'changed\n');
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.ok(writes.length >= 2);
-  const beforeCommit = writes.length;
-  command(root, ['git', 'add', 'base.txt']); command(root, ['git', 'commit', '-qm', 'changed head']);
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.ok(writes.length > beforeCommit);
-});
-
-test('redrawer does not redraw identical content', () => {
-  const writes = [];
-  const redraw = createRedrawer({ write: (value) => writes.push(value) });
-  assert.equal(redraw('same'), true);
-  assert.equal(redraw('same'), false);
-  assert.equal(redraw('different'), true);
-  assert.equal(writes.length, 2);
 });
 
 function cleanupRunner({ dirty = false, issueState = 'OPEN', mergedAt = null } = {}) {
