@@ -3,6 +3,8 @@
 Squeeze turns GitHub issues into isolated Herdr worktree teams with an owner, one implementer, a
 read-only validator, and a live Git/filesystem diff pane.
 
+Owner, diff, implementer, and validator each use a full tab; none share a split pane.
+
 Every pull request must be reviewed and approved by a human through GitHub before it is merged.
 
 ## Requirements

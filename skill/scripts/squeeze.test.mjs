@@ -90,8 +90,8 @@ test('enforces active issue counting by open Herdr workspaces', () => {
 });
 
 test('detects compact and legacy topology and missing compact roles', () => {
-  const tabs = [{ label: 'overview', tab_id: 't0' }, { label: 'workers', tab_id: 't1' }];
-  const panes = [{ tab_id: 't0', pane_id: 'p0' }, { tab_id: 't0', pane_id: 'pd' }, { tab_id: 't1', pane_id: 'p1' }, { tab_id: 't1', pane_id: 'p2' }];
+  const tabs = [{ label: 'overview', tab_id: 't0' }, { label: 'diff', tab_id: 'td' }, { label: 'workers', tab_id: 't1' }, { label: 'validation', tab_id: 't2' }];
+  const panes = [{ tab_id: 't0', pane_id: 'p0' }, { tab_id: 'td', pane_id: 'pd' }, { tab_id: 't1', pane_id: 'p1' }, { tab_id: 't2', pane_id: 'p2' }];
   const agents = [{ name: agentName(30, 'owner'), pane_id: 'p0' }, { name: agentName(30, 'implementer'), pane_id: 'p1' }, { name: agentName(30, 'validator'), pane_id: 'p2' }];
   assert.equal(topology(tabs), 'compact');
   assert.equal(topology([{ label: 'owner' }, { label: 'planner' }]), 'legacy');
@@ -125,6 +125,11 @@ function topologyRunner(legacy = false) {
       state.calls.push([commandName, args]);
       if (args[0] === 'tab' && args[1] === 'rename') state.tabs.find((tab) => tab.tab_id === args[2]).label = args[3];
       if (args[0] === 'pane' && args[1] === 'rename') state.panes.find((pane) => pane.pane_id === args[2]).label = args[3];
+      if (args[0] === 'pane' && args[1] === 'move') {
+        const tab = { label: args[args.indexOf('--label') + 1], tab_id: `t${state.tabs.length}` };
+        state.tabs.push(tab);
+        state.panes.find((pane) => pane.pane_id === args[2]).tab_id = tab.tab_id;
+      }
       if (args[0] === 'pane' && args[1] === 'process-info') return { status: state.observerRunning ? 0 : 1, stdout: state.observerRunning ? 'node observe.mjs' : '', stderr: '' };
       if (args[0] === 'pane' && args[1] === 'run') state.observerRunning = true;
       if (args[0] === 'agent' && args[1] === 'start') state.agents.push({ name: args[2], pane_id: args[args.indexOf('--pane') + 1], workspace_id: 'w30' });
@@ -152,20 +157,31 @@ function topologyRunner(legacy = false) {
   };
 }
 
-test('creates overview/workers splits, starts observer, and omits planner', () => {
+test('creates four full tabs, starts observer, and omits planner', () => {
   const runner = topologyRunner();
   const result = ensureRoles(runner, 'w30', '/worktree', 30, { url: 'https://example/30', branch: 'issue/30-safe' }, DEFAULT_CONFIG, ['AGENTS.md']);
   assert.equal(result, 'compact');
-  assert.deepEqual(runner.state.tabs.map((tab) => tab.label), ['overview', 'workers']);
+  assert.deepEqual(runner.state.tabs.map((tab) => tab.label), ['overview', 'diff', 'workers', 'validation']);
   assert.deepEqual(runner.state.panes.map((pane) => pane.label), ['owner', 'diff', 'implementer', 'validator']);
+  assert.deepEqual(new Set(runner.state.panes.map((pane) => pane.tab_id)).size, 4);
   assert.deepEqual(runner.state.agents.map((agent) => agent.name), ['i30-owner', 'i30-impl', 'i30-valid']);
   assert.equal(runner.state.observerRunning, true);
   assert.equal(runner.state.calls.some(([, args]) => args.includes('planner')), false);
-  assert.ok(runner.state.calls.some(([, args]) => args.includes('0.35')));
-  assert.ok(runner.state.calls.some(([, args]) => args.includes('0.5')));
+  assert.equal(runner.state.calls.some(([, args]) => args[0] === 'pane' && args[1] === 'split'), false);
   const observerStarts = runner.state.calls.filter(([, args]) => args[0] === 'pane' && args[1] === 'run').length;
   ensureRoles(runner, 'w30', '/worktree', 30, { url: 'https://example/30', branch: 'issue/30-safe' }, DEFAULT_CONFIG, ['AGENTS.md']);
   assert.equal(runner.state.calls.filter(([, args]) => args[0] === 'pane' && args[1] === 'run').length, observerStarts);
+});
+
+test('moves existing compact split panes into full tabs', () => {
+  const runner = topologyRunner();
+  runner.state.tabs.push({ label: 'workers', tab_id: 'tw' });
+  runner.state.panes[0].label = 'owner';
+  runner.state.panes.push({ label: 'diff', pane_id: 'pd', tab_id: 't0' }, { label: 'implementer', pane_id: 'pi', tab_id: 'tw' }, { label: 'validator', pane_id: 'pv', tab_id: 'tw' });
+  ensureRoles(runner, 'w30', '/worktree', 30, { url: 'https://example/30', branch: 'issue/30-safe' }, DEFAULT_CONFIG, ['AGENTS.md']);
+  assert.deepEqual(runner.state.tabs.map((tab) => tab.label), ['overview', 'workers', 'diff', 'validation']);
+  assert.equal(runner.state.panes.find((pane) => pane.label === 'diff').tab_id, 't2');
+  assert.equal(runner.state.panes.find((pane) => pane.label === 'validator').tab_id, 't3');
 });
 
 test('leaves legacy workspaces completely untouched', () => {
@@ -209,7 +225,7 @@ test('--dry-run reports compact topology, panes, launch modes, and observer with
   console.log = (value) => { output = JSON.parse(value); };
   try { main(['start', '30', '--dry-run'], runner); } finally { console.log = original; }
   assert.equal(output.topology, 'compact');
-  assert.deepEqual(output.panes.workers, ['implementer', 'validator']);
+  assert.deepEqual(output.panes, { overview: ['owner'], diff: ['diff'], workers: ['implementer'], validation: ['validator'] });
   assert.equal(output.roles.owner.launch, 'herdr');
   assert.ok(Array.isArray(output.observer));
   assert.equal(calls.some(([commandName, args]) => commandName === 'git' && args[0] === 'fetch'), false);
@@ -232,8 +248,8 @@ test('status reports compact or legacy topology and observer health', () => {
       if (commandName === 'herdr' && args[0] === 'agent') return { result: { agents: [] } };
       if (commandName === 'gh' && args[0] === 'pr') return [];
       const workspace = args[args.indexOf('--workspace') + 1];
-      if (commandName === 'herdr' && args[0] === 'tab') return { result: { tabs: workspace === 'w30' ? [{ label: 'overview', tab_id: 'to' }, { label: 'workers', tab_id: 'tw' }] : [{ label: 'owner', tab_id: 'lo' }, { label: 'planner', tab_id: 'lp' }] } };
-      if (commandName === 'herdr' && args[0] === 'pane') return { result: { panes: workspace === 'w30' ? [{ label: 'diff', pane_id: 'pd', tab_id: 'to' }] : [] } };
+      if (commandName === 'herdr' && args[0] === 'tab') return { result: { tabs: workspace === 'w30' ? [{ label: 'overview', tab_id: 'to' }, { label: 'diff', tab_id: 'td' }, { label: 'workers', tab_id: 'tw' }, { label: 'validation', tab_id: 'tv' }] : [{ label: 'owner', tab_id: 'lo' }, { label: 'planner', tab_id: 'lp' }] } };
+      if (commandName === 'herdr' && args[0] === 'pane') return { result: { panes: workspace === 'w30' ? [{ label: 'diff', pane_id: 'pd', tab_id: 'td' }] : [] } };
       throw new Error(`unexpected JSON command: ${commandName} ${args.join(' ')}`);
     },
   };

@@ -123,7 +123,7 @@ export function activeIssueWorktrees(worktrees, prefix) {
 
 export function missingRoles(number, tabs, panes, agents) {
   return ROLES.filter((role) => {
-    const tab = tabs.find((item) => item.label === (role === 'owner' ? 'overview' : 'workers'));
+    const tab = tabs.find((item) => item.label === (role === 'owner' ? 'overview' : role === 'implementer' ? 'workers' : 'validation'));
     if (!tab) return true;
     const paneIds = new Set(panes.filter((item) => item.tab_id === tab.tab_id).map((item) => item.pane_id));
     return !agents.some((item) => agentRecordedName(item) === agentName(number, role) && paneIds.has(item.pane_id));
@@ -251,8 +251,10 @@ function resolvedStartPlan(number, issue, config, worktrees, branchExistsLocally
     workspace: existing?.open_workspace_id ?? null,
     topology: existing?.open_workspace_id ? topology(workspaceTabs) : 'compact',
     panes: {
-      overview: ['owner', 'diff'],
-      workers: ['implementer', 'validator'],
+      overview: ['owner'],
+      diff: ['diff'],
+      workers: ['implementer'],
+      validation: ['validator'],
     },
     init: config.init,
     roles: Object.fromEntries(ROLES.map((role) => [role, {
@@ -281,10 +283,6 @@ function paneLabel(pane) {
   return pane.label ?? pane.title ?? pane.name;
 }
 
-function createdPane(data) {
-  return data?.result?.pane ?? data?.result?.new_pane ?? data?.result?.root_pane;
-}
-
 function renamePane(runner, pane, label) {
   if (paneLabel(pane) !== label) runner.run('herdr', ['pane', 'rename', pane.pane_id, label]);
   return { ...pane, label };
@@ -304,14 +302,23 @@ function ensureCompactPanes(runner, workspaceId, worktreePath) {
     }
   }
   ({ panes } = workspaceState(runner, workspaceId));
-  let overviewPanes = panes.filter((pane) => pane.tab_id === overview.tab_id);
-  let owner = overviewPanes.find((pane) => paneLabel(pane) === 'owner') ?? overviewPanes[0];
+  let owner = panes.find((pane) => pane.tab_id === overview.tab_id && paneLabel(pane) === 'owner') ?? panes.find((pane) => pane.tab_id === overview.tab_id);
   if (!owner) throw new Error('no pane found for overview tab');
   owner = renamePane(runner, owner, 'owner');
-  let observer = overviewPanes.find((pane) => pane.pane_id !== owner.pane_id && paneLabel(pane) === 'diff') ?? overviewPanes.find((pane) => pane.pane_id !== owner.pane_id);
-  if (!observer) observer = createdPane(runner.json('herdr', ['pane', 'split', owner.pane_id, '--direction', 'right', '--ratio', '0.35', '--cwd', worktreePath, '--no-focus']));
+
+  let diff = tabs.find((tab) => tab.label === 'diff');
+  let observer = diff && panes.find((pane) => pane.tab_id === diff.tab_id);
+  if (!observer) {
+    observer = panes.find((pane) => paneLabel(pane) === 'diff');
+    if (observer) runner.run('herdr', ['pane', 'move', observer.pane_id, '--new-tab', '--workspace', workspaceId, '--label', 'diff', '--no-focus']);
+    else {
+      const created = runner.json('herdr', ['tab', 'create', '--workspace', workspaceId, '--cwd', worktreePath, '--label', 'diff', '--no-focus']);
+      observer = created.result.root_pane;
+    }
+  }
   observer = renamePane(runner, observer, 'diff');
 
+  ({ tabs, panes } = workspaceState(runner, workspaceId));
   let workers = tabs.find((tab) => tab.label === 'workers');
   let implementer;
   if (!workers) {
@@ -320,12 +327,21 @@ function ensureCompactPanes(runner, workspaceId, worktreePath) {
     implementer = created.result.root_pane;
   }
   ({ panes } = workspaceState(runner, workspaceId));
-  const workerPanes = panes.filter((pane) => pane.tab_id === workers.tab_id);
-  implementer ??= workerPanes.find((pane) => paneLabel(pane) === 'implementer') ?? workerPanes[0];
+  implementer ??= panes.find((pane) => pane.tab_id === workers.tab_id && paneLabel(pane) === 'implementer') ?? panes.find((pane) => pane.tab_id === workers.tab_id);
   if (!implementer) throw new Error('no pane found for workers tab');
   implementer = renamePane(runner, implementer, 'implementer');
-  let validator = workerPanes.find((pane) => pane.pane_id !== implementer.pane_id && paneLabel(pane) === 'validator') ?? workerPanes.find((pane) => pane.pane_id !== implementer.pane_id);
-  if (!validator) validator = createdPane(runner.json('herdr', ['pane', 'split', implementer.pane_id, '--direction', 'right', '--ratio', '0.5', '--cwd', worktreePath, '--no-focus']));
+
+  ({ tabs, panes } = workspaceState(runner, workspaceId));
+  const validation = tabs.find((tab) => tab.label === 'validation');
+  let validator = validation && panes.find((pane) => pane.tab_id === validation.tab_id);
+  if (!validator) {
+    validator = panes.find((pane) => paneLabel(pane) === 'validator');
+    if (validator) runner.run('herdr', ['pane', 'move', validator.pane_id, '--new-tab', '--workspace', workspaceId, '--label', 'validation', '--no-focus']);
+    else {
+      const created = runner.json('herdr', ['tab', 'create', '--workspace', workspaceId, '--cwd', worktreePath, '--label', 'validation', '--no-focus']);
+      validator = created.result.root_pane;
+    }
+  }
   validator = renamePane(runner, validator, 'validator');
   return { owner, observer, implementer, validator };
 }

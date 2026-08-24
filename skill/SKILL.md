@@ -28,8 +28,8 @@ configuration and topology without mutations.
 
 The script verifies prerequisites, enforces the active-issue limit, fetches the configured base,
 creates or reopens the issue worktree, runs the configured repository init command before any role
-starts, and idempotently starts the compact `overview` and `workers` tabs. Existing four-role
-workspaces remain untouched as legacy topology. Continue through the `owner` agent.
+starts, and idempotently starts full `overview`, `diff`, `workers`, and `validation` tabs. Existing
+four-role workspaces remain untouched as legacy topology. Continue through the `owner` agent.
 
 ### `status`
 
