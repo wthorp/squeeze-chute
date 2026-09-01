@@ -64,7 +64,7 @@ test('encodes custom command boundaries without shell execution', () => {
   const result = spawnSync(...[launcherCommand(wrapped)[0], launcherCommand(wrapped).slice(1)], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), args);
-  assert.deepEqual(JSON.parse(Buffer.from(diffCommand('origin/main')[2], 'base64url').toString()), ['lumen', 'diff', 'origin/main', '--watch']);
+  assert.deepEqual(JSON.parse(Buffer.from(diffCommand('origin/main')[2], 'base64url').toString()), ['lumen', 'diff', 'origin/main..-', '--watch']);
 });
 
 test('creates safe bounded slugs and globally unique names', () => {

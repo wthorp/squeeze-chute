@@ -148,7 +148,7 @@ export function launcherCommand(command) {
 }
 
 export function diffCommand(base) {
-  return launcherCommand(['lumen', 'diff', base, '--watch']);
+  return launcherCommand(['lumen', 'diff', `${base}..-`, '--watch']);
 }
 
 export function initializeWorktree(runner, worktreePath, init, enabled = true) {
