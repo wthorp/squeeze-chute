@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sverklo": {
+      "command": "/opt/homebrew/bin/sverklo",
+      "args": [
+        "."
+      ],
+      "env": {
+        "SVERKLO_PROFILE": "core"
+      }
+    }
+  }
+}
